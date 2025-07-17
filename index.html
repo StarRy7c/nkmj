@@ -474,83 +474,104 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/shaka-player/4.7.11/shaka-player.ui.min.js" crossorigin="anonymous"></script>
     <script>
         let player, ui;
-        
-        // Function to get URL parameters easily
-        function getParam(name) {
-            const url = new URL(window.location.href);
-            return url.searchParams.get(name);
-        }
 
         async function init() {
-            const video = document.getElementById("video");
-            ui = video.ui;
-            const controls = ui.getControls();
-            player = controls.getPlayer();
-            window.player = player;
-
-            // Enhanced UI configuration
-            ui.configure({
-                controlPanelElements: [
-                    "play_pause", "mute", "volume", "spacer",
-                    "time_and_duration", "picture_in_picture",
-                    "fullscreen", "overflow_menu"
-                ],
-                volumeBarColors: {
-                    base: "rgba(255, 0, 150, 0.3)",
-                    level: "rgba(0, 204, 255, 0.8)"
-                },
-                seekBarColors: {
-                    base: "rgba(255, 255, 255, 0.2)",
-                    buffered: "rgba(255, 0, 150, 0.5)",
-                    played: "rgba(0, 204, 255, 0.8)"
-                },
-                fadeDelay: 3000,
-                doubleClickForFullscreen: true,
-                enableKeyboardPlaybackControls: true,
-                enableFullscreenOnRotation: true
-            });
-
-            // Enhanced error handling
-            player.addEventListener("error", onPlayerErrorEvent);
-            controls.addEventListener("error", onUIErrorEvent);
-
-            // Add smooth loading animation
-            const videoElement = document.getElementById('video');
-            videoElement.addEventListener('loadstart', () => {
-                console.log('🔄 Loading video...');
-            });
-
-            videoElement.addEventListener('canplay', () => {
-                console.log('✅ Video ready to play');
-            });
-
-            // Get URL, KID, and KEY from parameters
-            const mpdUrl = getParam('url');
-            const kid = getParam('kid');
-            const key = getParam('key');
-
-            if (!mpdUrl || !kid || !key) {
-                console.error("🚫 Missing URL/KID/KEY in parameters!");
-                showError("Missing video parameters. Please check the URL.");
-                return;
-            }
-
-            // Configure DRM
-            player.configure({
-                drm: {
-                    clearKeys: {
-                        [kid]: key
-                    }
-                },
-                streaming: {
-                    rebufferingGoal: 10,
-                    bufferingGoal: 30,
-                    bufferBehind: 30
-                }
-            });
-
             try {
-                await player.load(decodeURIComponent(mpdUrl));
+                // Initialize Shaka Player
+                shaka.polyfill.installAll();
+                
+                if (shaka.Player.isBrowserSupported()) {
+                    console.log('✅ Browser supports Shaka Player');
+                } else {
+                    console.error('🚫 Browser not supported');
+                    showError('Browser not supported for video playback');
+                    return;
+                }
+
+                const video = document.getElementById("video");
+                
+                // Initialize UI first
+                ui = new shaka.ui.Overlay(video, document.querySelector('.shaka-video-container'), video);
+                const controls = ui.getControls();
+                player = controls.getPlayer();
+                window.player = player;
+
+                // Enhanced UI configuration
+                ui.configure({
+                    controlPanelElements: [
+                        "play_pause", "mute", "volume", "spacer",
+                        "time_and_duration", "picture_in_picture",
+                        "fullscreen", "overflow_menu"
+                    ],
+                    volumeBarColors: {
+                        base: "rgba(255, 0, 150, 0.3)",
+                        level: "rgba(0, 204, 255, 0.8)"
+                    },
+                    seekBarColors: {
+                        base: "rgba(255, 255, 255, 0.2)",
+                        buffered: "rgba(255, 0, 150, 0.5)",
+                        played: "rgba(0, 204, 255, 0.8)"
+                    },
+                    fadeDelay: 3000,
+                    doubleClickForFullscreen: true,
+                    enableKeyboardPlaybackControls: true,
+                    enableFullscreenOnRotation: true
+                });
+
+                // Enhanced error handling
+                player.addEventListener("error", onPlayerErrorEvent);
+                controls.addEventListener("error", onUIErrorEvent);
+
+                // Add smooth loading animation
+                const videoElement = document.getElementById('video');
+                videoElement.addEventListener('loadstart', () => {
+                    console.log('🔄 Loading video...');
+                });
+
+                videoElement.addEventListener('canplay', () => {
+                    console.log('✅ Video ready to play');
+                });
+
+                // Manual MPD URL and DRM keys
+                const mpdUrl = 'https://sundirectgo-live.pc.cdn.bitgravity.com/hd38/dth.mpd';
+                const kid = '5e833f4019554aa394ff6de2eb19bf78';
+                const key = 'f60e08a145804890492f315b61789ac5';
+
+                console.log('🎯 Using MPD URL:', mpdUrl);
+                console.log('🔑 Using KID:', kid);
+
+                // Configure DRM
+                player.configure({
+                    drm: {
+                        clearKeys: {
+                            [kid]: key
+                        }
+                    },
+                    streaming: {
+                        rebufferingGoal: 10,
+                        bufferingGoal: 30,
+                        bufferBehind: 30,
+                        retryParameters: {
+                            timeout: 30000,
+                            maxAttempts: 3,
+                            baseDelay: 1000,
+                            backoffFactor: 2,
+                            fuzzFactor: 0.5
+                        }
+                    },
+                    manifest: {
+                        retryParameters: {
+                            timeout: 30000,
+                            maxAttempts: 3,
+                            baseDelay: 1000,
+                            backoffFactor: 2,
+                            fuzzFactor: 0.5
+                        }
+                    }
+                });
+
+                // Load the video
+                await player.load(mpdUrl);
                 console.log("✅ Video loaded successfully!");
                 
                 // Add smooth fade-in effect
@@ -561,6 +582,7 @@
                 }, 100);
                 
             } catch (e) {
+                console.error('❌ Initialization error:', e);
                 onPlayerError(e);
             }
         }
@@ -568,7 +590,7 @@
         function showError(message) {
             const errorDiv = document.createElement('div');
             errorDiv.style.cssText = `
-                position: absolute;
+                position: fixed;
                 top: 50%;
                 left: 50%;
                 transform: translate(-50%, -50%);
@@ -580,9 +602,21 @@
                 text-align: center;
                 backdrop-filter: blur(10px);
                 z-index: 1000;
+                max-width: 80%;
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
             `;
-            errorDiv.textContent = message;
+            errorDiv.innerHTML = `
+                <div style="font-weight: bold; margin-bottom: 10px;">⚠️ Error</div>
+                <div>${message}</div>
+            `;
             document.body.appendChild(errorDiv);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (errorDiv.parentNode) {
+                    errorDiv.parentNode.removeChild(errorDiv);
+                }
+            }, 5000);
         }
 
         function onPlayerErrorEvent(errorEvent) {
@@ -590,16 +624,41 @@
         }
 
         function onPlayerError(error) {
-            console.error("🚫 Shaka Player Error", error);
-            showError("Video playback error. Please try again.");
+            console.error("🚫 Shaka Player Error:", error);
+            let errorMessage = "Video playback error. Please try again.";
+            
+            if (error.code) {
+                switch (error.code) {
+                    case 1002:
+                        errorMessage = "Network error. Please check your internet connection.";
+                        break;
+                    case 6007:
+                        errorMessage = "DRM license error. Content may not be available.";
+                        break;
+                    case 1001:
+                        errorMessage = "Video format not supported.";
+                        break;
+                    default:
+                        errorMessage = `Error ${error.code}: ${error.message || 'Unknown error'}`;
+                }
+            }
+            
+            showError(errorMessage);
         }
 
         function onUIErrorEvent(errorEvent) {
             onPlayerError(errorEvent.detail);
         }
 
-        // Initialize when Shaka UI is loaded
-        document.addEventListener("shaka-ui-loaded", init);
+        // Initialize when DOM is ready
+        document.addEventListener("DOMContentLoaded", init);
+        
+        // Also try to initialize immediately if DOM is already loaded
+        if (document.readyState === 'loading') {
+            document.addEventListener("DOMContentLoaded", init);
+        } else {
+            init();
+        }
 
         // Add keyboard shortcuts
         document.addEventListener('keydown', (e) => {
